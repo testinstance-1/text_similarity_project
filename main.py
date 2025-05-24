@@ -2,13 +2,14 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import requests
 from scipy.spatial.distance import cosine
+import os
 
 # Initialize FastAPI app
 app = FastAPI(title="Semantic Similarity API", description="API to compute semantic similarity using HF Inference API")
 
 # Hugging Face API configuration
 API_URL = "https://api-inference.huggingface.co/models/sentence-transformers/all-MiniLM-L6-v2"
-API_TOKEN = "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"
+API_TOKEN = os.getenv("HF_API_TOKEN", "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")  # Fallback to hardcoded token
 
 # Define request body model
 class TextPair(BaseModel):
@@ -29,9 +30,12 @@ def get_embeddings(texts):
         if response.status_code == 200:
             return response.json()
         else:
-            raise HTTPException(status_code=500, detail=f"HF API error: {response.status_code}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"HF API error: Status {response.status_code}, Message: {response.text}"
+            )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching embeddings: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching embeddings: {str(e)}")
 
 # Define the API endpoint
 @app.post("/predict", response_model=dict)
@@ -49,7 +53,7 @@ async def predict_similarity(text_pair: TextPair):
         # Fetch embeddings
         embeddings = get_embeddings([text_pair.text1, text_pair.text2])
         if embeddings is None or len(embeddings) < 2:
-            raise HTTPException(status_code=500, detail="Failed to fetch embeddings")
+            raise HTTPException(status_code=500, detail="Failed to fetch valid embeddings")
         emb1, emb2 = embeddings[0], embeddings[1]
         
         # Compute cosine similarity
@@ -61,7 +65,7 @@ async def predict_similarity(text_pair: TextPair):
     except HTTPException as e:
         raise e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Server error: {e}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 # Health check endpoint
 @app.get("/health")
