@@ -23,17 +23,18 @@ class TextPair(BaseModel):
 
 def get_embeddings(texts):
     """
-    Fetch embeddings from Hugging Face Inference API.
+    Fetch similarity scores from Hugging Face Inference API.
     Args:
-        texts (list): List of texts to get embeddings for
+        texts (list): List of two texts (source and comparison)
     Returns:
-        list: List of embeddings
+        list: List of similarity scores
     """
     headers = {"Authorization": f"Bearer {API_TOKEN}"}
+    payload = {"inputs": {"source_sentence": texts[0], "sentences": [texts[1]]}}
     try:
-        logger.info(f"Sending request to HF API with texts: {texts[:50]}...")
-        response = requests.post(API_URL, headers=headers, json={"inputs": texts}, timeout=10)
-        logger.info(f"HF API response status: {response.status_code}")
+        logger.info(f"Sending request to HF API with payload: {payload}")
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=10)
+        logger.info(f"HF API response status: {response.status_code}, content: {response.text[:200]}")
         if response.status_code == 200:
             return response.json()
         else:
@@ -64,18 +65,21 @@ async def predict_similarity(text_pair: TextPair):
         if not text_pair.text1 or not text_pair.text2:
             raise HTTPException(status_code=400, detail="Both text1 and text2 must be non-empty strings")
         
-        # Fetch embeddings
-        embeddings = get_embeddings([text_pair.text1, text_pair.text2])
-        if embeddings is None or len(embeddings) < 2:
-            raise HTTPException(status_code=500, detail="Failed to fetch valid embeddings")
-        emb1, emb2 = embeddings[0], embeddings[1]
+        # Fetch similarity scores
+        scores = get_embeddings([text_pair.text1, text_pair.text2])
+        if not isinstance(scores, list) or len(scores) < 1:
+            raise HTTPException(status_code=500, detail="Invalid embeddings format")
+        # Extract first similarity score
+        similarity_score = scores[0]
+        if not isinstance(similarity_score, (int, float)):
+            raise HTTPException(status_code=500, detail="Invalid similarity score format")
         
-        # Compute cosine similarity
-        similarity = 1 - cosine(emb1, emb2)
-        similarity_score = max(0.0, min(1.0, (similarity + 1) / 2))
+        # Normalize score to [0,1] (handles negative scores)
+        normalized_score = (similarity_score + 1) / 2 if similarity_score < 0 else similarity_score
+        normalized_score = max(0.0, min(1.0, float(normalized_score)))
         
         # Return response in required format
-        return {"similarity score": similarity_score}
+        return {"similarity score": normalized_score}
     except HTTPException as e:
         raise e
     except Exception as e:
