@@ -1,6 +1,5 @@
-fastapi
-uvicorn
-requests
-scikit-learn
-numpy
-pydantic
+fastapi==0.103.2
+uvicorn==0.23.2
+requests==2.31.0
+scipy==1.10.1
+pydantic==1.10.12
