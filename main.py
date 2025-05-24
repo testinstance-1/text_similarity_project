@@ -3,6 +3,11 @@ from pydantic import BaseModel
 import requests
 from scipy.spatial.distance import cosine
 import os
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI(title="Semantic Similarity API", description="API to compute semantic similarity using HF Inference API")
@@ -26,16 +31,25 @@ def get_embeddings(texts):
     """
     headers = {"Authorization": f"Bearer {API_TOKEN}"}
     try:
-        response = requests.post(API_URL, headers=headers, json={"inputs": texts})
+        logger.info(f"Sending request to HF API with texts: {texts[:50]}...")
+        response = requests.post(API_URL, headers=headers, json={"inputs": texts}, timeout=10)
+        logger.info(f"HF API response status: {response.status_code}")
         if response.status_code == 200:
             return response.json()
         else:
-            raise HTTPException(
-                status_code=500,
-                detail=f"HF API error: Status {response.status_code}, Message: {response.text}"
-            )
-    except Exception as e:
+            error_detail = {
+                "status_code": response.status_code,
+                "response_text": response.text,
+                "headers": dict(response.headers)
+            }
+            logger.error(f"HF API error: {error_detail}")
+            raise HTTPException(status_code=500, detail=f"HF API error: {error_detail}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request exception: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error fetching embeddings: {str(e)}")
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 # Define the API endpoint
 @app.post("/predict", response_model=dict)
@@ -65,6 +79,7 @@ async def predict_similarity(text_pair: TextPair):
     except HTTPException as e:
         raise e
     except Exception as e:
+        logger.error(f"Server error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 # Health check endpoint
@@ -74,3 +89,11 @@ async def health_check():
     Health check endpoint to verify API is running.
     """
     return {"status": "API is running"}
+
+# Debug endpoint to check token
+@app.get("/debug")
+async def debug_token():
+    """
+    Debug endpoint to verify token configuration.
+    """
+    return {"api_token_configured": bool(API_TOKEN), "token_preview": API_TOKEN[:5] + "..." if API_TOKEN else "None"}
